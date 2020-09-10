@@ -212,20 +212,19 @@ function MercenaryController.getrandomposnear(position)
 	ret.x = position.x
 	ret.y = position.y
 	ret.z = position.z
-	ret.x = position.x + math.random() - math.random()
-	ret.y = position.y + math.random() - math.random()
+	ret.x = position.x + (math.random() * 2) - (math.random() * 2)
+	ret.y = position.y + (math.random() * 2) - (math.random() * 2)
 	return ret
 end
 
-function MercenaryController:TeleportToPlayer()
-	
+function MercenaryController.TeleportToPlayer(entity)
 	if self:IsPlayerOnHorse() then
 		local horse = XGenAIModule.GetEntityByWUID(horseWuid)
 		local position = MercenaryController.getrandomposnear(horse:GetWorldPos())
-		self.Follower:SetWorldPos(horse)
+		entity:SetWorldPos(horse)
 	else
 		local position = MercenaryController.getrandomposnear(player:GetWorldPos())
-		self.Follower:SetWorldPos(position)
+		entity:SetWorldPos(position)
 	end
 end
 
@@ -255,7 +254,12 @@ function MercenaryController.ResetAfterDismount(self)
 		self.oversizeWeap = nil
 	end
 	self.onHorse = false
-	--self.KillHorse(self)
+	self.attemptingDismount = false
+	if self.Follower.actor:GetCurrentAnimationState() ~= "Dismount" then
+		self.KillHorse(self)
+	else
+		System.LogAlways("Something really bad happened. Attempted to delete horse in the middle of dismounting")
+	end
 	self:ResetOrder()
 end
 
@@ -270,32 +274,35 @@ function MercenaryController:OnUpdate(delta)
 	end
 	if self.Follower ~= nil then
 		if self.Follower.soul:GetState("health") < 1 then
-			System.LogAlways("$5 Has died!")
+			System.LogAlways("$5 Follower has died!")
 			-- hopefully no memory leak if we don't call destroy entity (assuming that engine cleans up for us for corpse/ragdoll purposes)
 			self.Follower = nil
 			-- delete me for now
 			System.RemoveEntity(self.id)
 		else
-			if self:IsPlayerOnHorse() and self.FollowerHorse == nil and self.onHorse == false and self.onHorse == false then
-				self:SpawnHorse()
-			end
-			if not self:IsPlayerOnHorse() and self.FollowerHorse ~= nil and self.attemptingDismount == false then
-				self:Dismount()
-			end
-			
-			if self.attemptingMount and self.Follower.actor:GetCurrentAnimationState() == "MotionIdle" then
-				self.attemptingMount = false
-				self.onHorse = true
-			end
-			if self.attemptingDismount and self.Follower.actor:GetCurrentAnimationState() == "MotionIdle" then
-			System.LogAlways("should only print once")	
-				Script.SetTimer(1000, self.ResetAfterDismount, self)
-				self.attemptingDismount = false
+			if self.useHorse then
+				if self:IsPlayerOnHorse() and self.FollowerHorse == nil and self.onHorse == false and self.attemptingDismount == false and self.attemptingMount == false then
+					self:SpawnHorse()
+				end
+				
+				if self.attemptingMount and self.Follower.actor:GetCurrentAnimationState() == "MotionIdle" then
+					self.attemptingMount = false
+					self.onHorse = true
+				end
+				if self.attemptingDismount and self.Follower.actor:GetCurrentAnimationState() == "MotionIdle" and self.onHorse then
+					System.LogAlways("should only print once")	
+					Script.SetTimer(500, self.ResetAfterDismount, self)
+					self.onHorse = false
+				end
+				-- needs to execute after
+				if not self:IsPlayerOnHorse() and self.FollowerHorse ~= nil and self.attemptingDismount == false and self.onHorse then
+					self:Dismount()
+				end
 			end
 			local playerPosition = player:GetWorldPos()
 			local dist = DistanceSqVectors(self.Follower:GetWorldPos(), playerPosition)
 			if dist > self.MaxFollowDistSq and self.FollowerHorse == nil then
-				self:TeleportToPlayer()
+				self.TeleportToPlayer(self.Follower)
 			end
 		end
 	end
