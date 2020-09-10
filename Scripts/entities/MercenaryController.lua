@@ -1,6 +1,6 @@
 MercenaryController = {
-	useHorse = true,
-	attemptReequipPolearm = true,
+	useHorse = true, -- self explanitory
+	attemptReequipPolearm = true, -- This flag should be disabled if you have a mod that reassigns polearms to shields
 	useNormalBrain = true,
 	needReload = false,
 	attemptingDismount = false,
@@ -10,7 +10,7 @@ MercenaryController = {
 	FollowerHorse = nil,
 	MaxFollowDistSq = 900,
 	MaxFollowDistSqHorse = 1800,
-	oversizeWeap = nil
+	oversizeWeap = nil -- only used if attemptReequipPolearm is enabled
 }
 
 function MercenaryController:OnSpawn()
@@ -161,7 +161,7 @@ function MercenaryController:SpawnHorse()
 	-- so we unequip it then re equip it
 	local weapon = self.Follower.human:GetItemInHand(0)
 	local isOversized = ItemManager.IsItemOversized(weapon)
-	if isOversized then
+	if isOversized and self.attemptReequipPolearm then
 		self.Follower.inventory:AddItem(weapon)
 		self.Follower.actor:UnequipInventoryItem(weapon)
 		self.oversizeWeap = weapon
@@ -217,14 +217,14 @@ function MercenaryController.getrandomposnear(position)
 	return ret
 end
 
-function MercenaryController.TeleportToPlayer(entity)
+function MercenaryController:TeleportToPlayer()
 	if self:IsPlayerOnHorse() then
 		local horse = XGenAIModule.GetEntityByWUID(horseWuid)
 		local position = MercenaryController.getrandomposnear(horse:GetWorldPos())
-		entity:SetWorldPos(horse)
+		self.Follower:SetWorldPos(horse)
 	else
 		local position = MercenaryController.getrandomposnear(player:GetWorldPos())
-		entity:SetWorldPos(position)
+		self.Follower:SetWorldPos(position)
 	end
 end
 
@@ -240,6 +240,9 @@ end
 function MercenaryController.KillHorse(self)
 	if self.FollowerHorse ~= nil then
 		self.FollowerHorse.soul:SetState("health", 0)
+		Dump(self.FollowerHorse.actor:GetCurrentAnimationState())
+		self.FollowerHorse:ResetAnimation(0,-1)
+		Dump(self.FollowerHorse.actor:GetCurrentAnimationState())
 		self.FollowerHorse:Hide(1)
 		System.RemoveEntity(self.FollowerHorse.id)
 		self.FollowerHorse = nil
@@ -291,18 +294,18 @@ function MercenaryController:OnUpdate(delta)
 				end
 				if self.attemptingDismount and self.Follower.actor:GetCurrentAnimationState() == "MotionIdle" and self.onHorse then
 					System.LogAlways("should only print once")	
-					Script.SetTimer(500, self.ResetAfterDismount, self)
+					Script.SetTimer(1000, self.ResetAfterDismount, self)
 					self.onHorse = false
 				end
 				-- needs to execute after
-				if not self:IsPlayerOnHorse() and self.FollowerHorse ~= nil and self.attemptingDismount == false and self.onHorse then
+				if (not self:IsPlayerOnHorse() or player.actor:GetCurrentAnimationState() == "Dismount") and self.FollowerHorse ~= nil and self.attemptingDismount == false and self.onHorse then
 					self:Dismount()
 				end
 			end
 			local playerPosition = player:GetWorldPos()
 			local dist = DistanceSqVectors(self.Follower:GetWorldPos(), playerPosition)
 			if dist > self.MaxFollowDistSq and self.FollowerHorse == nil then
-				self.TeleportToPlayer(self.Follower)
+				self:TeleportToPlayer()
 			end
 		end
 	end
