@@ -1,7 +1,8 @@
 Follower_Mod = {
 	cUniqueIdName="uniqueIdMercenaryMerchant",
 	cost = 1000,
-	currController = nil
+	currController = nil,
+	horse = nil
 }
 
 function Follower_Mod.AssignActions(entity)
@@ -54,13 +55,20 @@ function Follower_Mod.SpawnTestHostile()
 	local entity = System.SpawnEntity(spawnParams)
 end
 
+function Follower_Mod.horse()
+	Follower_Mod.currController:SpawnHorse()
+end
+function Follower_Mod.horse2()
+	Follower_Mod.currController:Dismount()
+end
+
+
 function Follower_Mod.Order()
 	Follower_Mod.currController:FollowOrder()
 end
 
-
 function Follower_Mod.hardreset()
-	Follower_Mod.currController:Kill()
+	Follower_Mod.currController:ResetOrder()
 end
 
 function Follower_Mod.shop()
@@ -72,7 +80,7 @@ function Follower_Mod.shop()
 	spawnParams.name = Follower_Mod.cUniqueIdName
 	local vec = { x=2775.926, y=682.817, z=101.530 }
 	--spawnParams.position = {x=52.073,y=43.119,z=33.56}
-	spawnParams.position=vec
+	spawnParams.position=position
 	spawnParams.properties = {}
 	spawnParams.properties.sharedSoulGuid = "4eafa794-d75f-4ba1-daa6-1e91819f1cba"
 	spawnParams.properties.bWH_PerceptibleObject = 1
@@ -95,8 +103,24 @@ function Follower_Mod.create()
     Follower_Mod.currController = entity
 end
 
-System.AddCCommand("add_cuman", "Follower_Mod.SpawnTestHostile()", "[Debug] test follower")
+function Follower_Mod.uninstall()
+	if Follower_Mod.currController ~= nil then
+		System.RemoveEntity(Follower_Mod.currController)
+		Follower_Mod.currController = nil
+	end
+	local entity = System.GetEntityByName(Follower_Mod.cUniqueIdName) 
+	if entity ~= nil then
+		entity.soul:SetState("health", 0)
+		entity:Hide(1)
+		System.RemoveEntity(entity.id)
+	end
+end
+
+System.AddCCommand("makehorse", "Follower_Mod.horse()", "[Debug] test follower")
+System.AddCCommand("makehorse2", "Follower_Mod.horse2()", "[Debug] test follower")
+System.AddCCommand("add_cuman", "Follower_Mod.horse()", "[Debug] test follower")
 System.AddCCommand("follower_order", "Follower_Mod.ResetOrder()", "[Debug] test follower")
+System.AddCCommand("follower_uninstall", "Follower_Mod.uninstall", "[Debug] test follower")
 System.AddCCommand("follower_make_shop", "Follower_Mod.shop()", "[Debug] test follower")
 System.AddCCommand("follower_hard_reset", "Follower_Mod.hardreset()", "[Debug] test follower")
 System.AddCCommand("follower_init", "Follower_Mod.create()", "[Debug] test follower")

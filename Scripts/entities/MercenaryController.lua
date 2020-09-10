@@ -1,13 +1,16 @@
-NPCAIController = {
-	NPC = nil,
-	currentTarget = nil
-}
-
 MercenaryController = {
+	useHorse = true,
+	attemptReequipPolearm = true,
 	useNormalBrain = true,
 	needReload = false,
+	attemptingDismount = false,
+	attemptingMount = false,
+	onHorse = false,
 	Follower = nil,
-	MaxFollowDistSq = 900
+	FollowerHorse = nil,
+	MaxFollowDistSq = 900,
+	MaxFollowDistSqHorse = 1800,
+	oversizeWeap = nil
 }
 
 function MercenaryController:OnSpawn()
@@ -17,6 +20,7 @@ end
 
 function MercenaryController:OnDestroy()
 	self:Kill()
+	self.KillHorse(self)
 end
 
 -- doing this inside of the NPC behaviors was horrendous and impossible to test
@@ -58,12 +62,13 @@ function MercenaryController:OnSave(table)
 		System.LogAlways("$5 Tried to save but follower is nil!!")
 	end
 	table.Follower = self.Follower:GetGUID()
+	table.FollowerHorse = self.FollowerHorse:GetGUID()
 end
 
 function MercenaryController:OnLoad(table)
 	System.LogAlways("$5 OnLoad")
 	self.Follower = System.GetEntityByGUID(table.Follower)
-
+	self.FollowerHorse = System.GetEntityByGUID(table.FollowerHorse)
 	if self.Follower == nil then
 		System.LogAlways("$5 Load Failed")
 	end
@@ -126,27 +131,58 @@ function MercenaryController:Spawn()
 	spawnParams.properties.bWH_PerceptibleObject = 1
 	local entity = System.SpawnEntity(spawnParams)
 	--entity.soul.factionId = player.soul:GetFactionID()
-	local initmsg = Utils.makeTable('skirmish:init',{controller=player.this.id,isEnemy=false,oponentsNode=player.this.id,useQuickTargeting=false,targetingDistance=10.0, useMassBrain=self.useNormalBrain})
-	XGenAIModule.SendMessageToEntityData(entity.soul:GetId(),'skirmish:init',initmsg)
-
 	self.Follower = entity
+	self:InitOrder()
 	self:AssignActions()
 	self:FollowOrder()
 	self:SetStats()
 end
 
+function MercenaryController:SpawnHorse()
+	System.LogAlways("$5 Attempting to Spawn horse")
+	self.KillHorse(self)
+	
+	local position = self.Follower:GetWorldPos()
+	local spawnParams = {}
+	spawnParams.class = "Horse"
+	spawnParams.radius = 5
+	spawnParams.name = "chaser"
+	--spawnParams.position = {x=52.073,y=43.119,z=33.56}
+	spawnParams.position=position
+	spawnParams.properties = {}
+	spawnParams.properties.sharedSoulGuid = "490b0faa-1114-9cbb-f3a8-68e242922abc"
+	spawnParams.properties.bWH_PerceptibleObject = 1
+	local entity = System.SpawnEntity(spawnParams)
+	self.FollowerHorse = entity
+	self.attemptingMount = true
+	self.Follower.human:Mount(entity.id)
+	
+	-- polearms are dropped automatically due to AI reset after dismount
+	-- so we unequip it then re equip it
+	local weapon = self.Follower.human:GetItemInHand(0)
+	local isOversized = ItemManager.IsItemOversized(weapon)
+	if isOversized then
+		self.Follower.inventory:AddItem(weapon)
+		self.Follower.actor:UnequipInventoryItem(weapon)
+		self.oversizeWeap = weapon
+	end
+end
+
+function MercenaryController:Dismount()
+	if self.FollowerHorse ~= nil then
+		self.Follower.human:Dismount()
+		self.attemptingDismount = true
+	end
+end
 
 function MercenaryController:OrderAttack(entity)
 	local initmsg2 = Utils.makeTable('skirmish:command',{type="attack",target=entity.this.id})
 	XGenAIModule.SendMessageToEntityData(self.Follower.this.id,'skirmish:command',initmsg2);
 end
 
-function MercenaryController:HardReset()
-end
 
 function MercenaryController:ResetOrder()
-	local initmsg = Utils.makeTable('skirmish:init',{controller=player.this.id,isEnemy=false,oponentsNode=player.this.id,useQuickTargeting=false,targetingDistance=10.0, useMassBrain=self.useAggressiveBrain})
-	XGenAIModule.SendMessageToEntityData(entity.soul:GetId(),'skirmish:init',initmsg)
+	self:InitOrder()
 	self:FollowOrder()
 end
 
@@ -160,25 +196,74 @@ function MercenaryController:FollowOrder()
 	--XGenAIModule.SendMessageToEntityData(self.Follower.soul:GetId(),'skirmish:command',initmsg2);
 end
 
+function MercenaryController:InitOrder()
+	local initmsg = Utils.makeTable('skirmish:init',{controller=player.this.id,isEnemy=false,oponentsNode=player.this.id,useQuickTargeting=false,targetingDistance=10.0, useMassBrain=self.useAggressiveBrain })
+	XGenAIModule.SendMessageToEntityData(self.Follower.soul:GetId(),'skirmish:init',initmsg);
+end
+
+function MercenaryController:IsPlayerOnHorse()
+	local horseWuid = player.human:GetHorse()
+	return horseWuid ~= INVALID_WUID
+end
+
+function MercenaryController.getrandomposnear(position)
+	-- deep copy
+	local ret = {}
+	ret.x = position.x
+	ret.y = position.y
+	ret.z = position.z
+	ret.x = position.x + math.random() - math.random()
+	ret.y = position.y + math.random() - math.random()
+	return ret
+end
+
 function MercenaryController:TeleportToPlayer()
-	local position = player:GetWorldPos()
-	self.Follower:SetWorldPos(position)
+	
+	if self:IsPlayerOnHorse() then
+		local horse = XGenAIModule.GetEntityByWUID(horseWuid)
+		local position = MercenaryController.getrandomposnear(horse:GetWorldPos())
+		self.Follower:SetWorldPos(horse)
+	else
+		local position = MercenaryController.getrandomposnear(player:GetWorldPos())
+		self.Follower:SetWorldPos(position)
+	end
 end
 
 function MercenaryController:Kill()
 	if self.Follower ~= nil then
-		--self.Follower:DeleteThis()
+		self.Follower.soul:SetState("health", 0)
+		self.Follower:Hide(1)
 		System.RemoveEntity(self.Follower.id)
 		self.Follower = nil
 	end	
+end
+
+function MercenaryController.KillHorse(self)
+	if self.FollowerHorse ~= nil then
+		self.FollowerHorse.soul:SetState("health", 0)
+		self.FollowerHorse:Hide(1)
+		System.RemoveEntity(self.FollowerHorse.id)
+		self.FollowerHorse = nil
+	end	
+end
+
+function MercenaryController.ResetAfterDismount(self)
+	
+	if self.oversizeWeap ~= nil and self.attemptReequipPolearm then
+		self.Follower.actor:EquipInventoryItem(self.oversizeWeap)
+		self.Follower.human:DrawFromInventory(self.oversizeWeap, 0, false)
+		self.oversizeWeap = nil
+	end
+	self.onHorse = false
+	--self.KillHorse(self)
+	self:ResetOrder()
 end
 
 function MercenaryController:OnUpdate(delta)
 	--System.LogAlways("$5 onupdate.")
 	if self.needReload == true then
 		--Dump(self.Follower)
-		local initmsg = Utils.makeTable('skirmish:init',{controller=player.this.id,isEnemy=false,oponentsNode=player.this.id,useQuickTargeting=false,targetingDistance=10.0, useMassBrain=self.useAggressiveBrain })
-		XGenAIModule.SendMessageToEntityData(self.Follower.soul:GetId(),'skirmish:init',initmsg);
+		self:InitOrder()
 		self:FollowOrder()
 		self:AssignActions()
 		self.needReload = false
@@ -191,11 +276,27 @@ function MercenaryController:OnUpdate(delta)
 			-- delete me for now
 			System.RemoveEntity(self.id)
 		else
+			if self:IsPlayerOnHorse() and self.FollowerHorse == nil and self.onHorse == false and self.onHorse == false then
+				self:SpawnHorse()
+			end
+			if not self:IsPlayerOnHorse() and self.FollowerHorse ~= nil and self.attemptingDismount == false then
+				self:Dismount()
+			end
+			
+			if self.attemptingMount and self.Follower.actor:GetCurrentAnimationState() == "MotionIdle" then
+				self.attemptingMount = false
+				self.onHorse = true
+			end
+			if self.attemptingDismount and self.Follower.actor:GetCurrentAnimationState() == "MotionIdle" then
+			System.LogAlways("should only print once")	
+				Script.SetTimer(1000, self.ResetAfterDismount, self)
+				self.attemptingDismount = false
+			end
 			local playerPosition = player:GetWorldPos()
-			 local dist = DistanceSqVectors(self.Follower:GetWorldPos(), playerPosition)
-			 if dist > self.MaxFollowDistSq then
+			local dist = DistanceSqVectors(self.Follower:GetWorldPos(), playerPosition)
+			if dist > self.MaxFollowDistSq and self.FollowerHorse == nil then
 				self:TeleportToPlayer()
-			 end
+			end
 		end
 	end
 end
