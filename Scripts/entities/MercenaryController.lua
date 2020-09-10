@@ -2,7 +2,7 @@ MercenaryController = {
 	useHorse = true, -- self explanitory
 	attemptReequipPolearm = true, -- This flag should be disabled if you have a mod that reassigns polearms to shields
 	useNormalBrain = true,
-	needReload = false,
+	needReload = false, -- loading function
 	attemptingDismount = false,
 	attemptingMount = false,
 	onHorse = false,
@@ -23,39 +23,18 @@ function MercenaryController:OnDestroy()
 	self.KillHorse(self)
 end
 
--- doing this inside of the NPC behaviors was horrendous and impossible to test
--- this is the option we take when we need control of the AI
-function MercenaryController:SearchForHostiles()
-    local playerPos = player:GetWorldPos() 
-    local safeRadius = 2.5
-    local ents = System.GetEntitiesInSphere(self.Follower:GetWorldPos(), safeRadius)
-    if ents and #ents > 0 then
-        for i,e in pairs(ents) do
-			if e.class == "NPC" and e.this.id ~= self.Follower.this.id and e.this.id ~= player.this.id then
-				local pos = e:GetWorldPos()
-				System.LogAlways("$5 found a man")
-				local dist = DistanceSqVectors(self.Follower:GetWorldPos(), pos)
-				if dist < 5 and dist > 0.01 then
-					self:OrderAttack(e)
-				end
-				System.LogAlways(tostring(dist))
-			end
-		end
-	end		
-end
-
+-- easier than messing with xmls
 function MercenaryController:SetStats()
 	self.Follower.soul:AdvanceToStatLevel("str",15)
 	self.Follower.soul:AdvanceToStatLevel("agi",15)
-	self.Follower.soul:AdvanceToStatLevel("vit",15)
-	self.Follower.soul:AdvanceToSkillLevel("defense",12)
+	self.Follower.soul:AdvanceToStatLevel("vit",18)
+	self.Follower.soul:AdvanceToSkillLevel("defense",14)
 	self.Follower.soul:AdvanceToSkillLevel("weapon_large",12)
 	self.Follower.soul:AdvanceToSkillLevel("weapon_sword",12)
 	self.Follower.soul:AddPerk(string.upper("d2da2217-d46d-4cdb-accb-4ff860a3d83e")) -- perfect block
 	self.Follower.soul:AddPerk(string.upper("ec4c5274-50e3-4bbf-9220-823b080647c4")) -- riposte
 	self.Follower.soul:AddPerk(string.upper("3e87c467-681d-48b5-9a8c-485443adcd42")) -- pommel strike
 end
-
 
 function MercenaryController:OnSave(table)
 	if self.Follower == nil then
@@ -72,7 +51,7 @@ function MercenaryController:OnLoad(table)
 	if self.Follower == nil then
 		System.LogAlways("$5 Load Failed")
 	end
-	self.Follower:SetViewDistUnlimited()
+	
 	self.needReload=true
 end
 
@@ -154,8 +133,12 @@ function MercenaryController:SpawnHorse()
 	spawnParams.properties.bWH_PerceptibleObject = 1
 	local entity = System.SpawnEntity(spawnParams)
 	self.FollowerHorse = entity
+	self:Mount()
+end
+
+function MercenaryController:Mount()
 	self.attemptingMount = true
-	self.Follower.human:Mount(entity.id)
+	self.Follower.human:Mount(self.FollowerHorse.id)
 	
 	-- polearms are dropped automatically due to AI reset after dismount
 	-- so we unequip it then re equip it
@@ -256,23 +239,34 @@ function MercenaryController.ResetAfterDismount(self)
 		self.Follower.human:DrawFromInventory(self.oversizeWeap, 0, false)
 		self.oversizeWeap = nil
 	end
-	self.onHorse = false
-	self.attemptingDismount = false
+
+	-- it breaks the horse as well if the horse animation state is dismount
+	-- no way to fix that at the moment though
 	if self.Follower.actor:GetCurrentAnimationState() ~= "Dismount" then
 		self.KillHorse(self)
 	else
 		System.LogAlways("Something really bad happened. Attempted to delete horse in the middle of dismounting")
 	end
 	self:ResetOrder()
+
+	self.onHorse = false
+	self.attemptingDismount = false
 end
 
 function MercenaryController:OnUpdate(delta)
 	--System.LogAlways("$5 onupdate.")
 	if self.needReload == true then
+		System.LogAlways("Reloaded Follower")
 		--Dump(self.Follower)
+		self.Follower:SetViewDistUnlimited()
 		self:InitOrder()
 		self:FollowOrder()
 		self:AssignActions()
+		if self.FollowerHorse~=nil then
+			System.LogAlways("Has Horse")
+			self.FollowerHorse:SetViewDistUnlimited()
+			self:Mount()
+		end
 		self.needReload = false
 	end
 	if self.Follower ~= nil then
@@ -294,7 +288,7 @@ function MercenaryController:OnUpdate(delta)
 				end
 				if self.attemptingDismount and self.Follower.actor:GetCurrentAnimationState() == "MotionIdle" and self.onHorse then
 					System.LogAlways("should only print once")	
-					Script.SetTimer(1000, self.ResetAfterDismount, self)
+					Script.SetTimer(500, self.ResetAfterDismount, self)
 					self.onHorse = false
 				end
 				-- needs to execute after
