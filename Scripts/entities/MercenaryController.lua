@@ -1,8 +1,13 @@
 MercenaryController = {
 	useHorse = true, -- self explanitory
+	preventSavingOnHorse = true, -- self explanitory
 	attemptReequipPolearm = true, -- This flag should be disabled if you have a mod that reassigns polearms to shields
+	
+	--internal stuff
+	saveLockName="FollowerSaveLock",
 	useNormalBrain = true,
 	needReload = false, -- loading function
+	signalFlag = false, -- hack
 	attemptingDismount = false,
 	attemptingMount = false,
 	onHorse = false,
@@ -42,12 +47,23 @@ function MercenaryController:OnSave(table)
 	end
 	table.Follower = self.Follower:GetGUID()
 	table.FollowerHorse = self.FollowerHorse:GetGUID()
+	if self.oversizeWeap ~= nil then
+		local weap = ItemManager.GetItem(self.oversizeWeap)
+		table.oversizeWeapClass = weap.class
+	else
+		table.oversizeWeapClass = nil
+	end
 end
 
 function MercenaryController:OnLoad(table)
 	System.LogAlways("$5 OnLoad")
 	self.Follower = System.GetEntityByGUID(table.Follower)
 	self.FollowerHorse = System.GetEntityByGUID(table.FollowerHorse)
+	if table.oversizeWeapClass ~= nil then
+		--System.LogAlways(table.oversizeWeapClass)
+		--temporary use of this as a class
+		self.oversizeWeap = table.oversizeWeapClass
+	end
 	if self.Follower == nil then
 		System.LogAlways("$5 Load Failed")
 	end
@@ -74,7 +90,8 @@ function MercenaryController:AssignActions()
 	self.Follower.Retire = function (self, user)
 		self.soul:SetState("health", 0)
 		self:Hide(1)
-		System.RemoveEntity(self.id)
+		self:DeleteThis()
+		--System.RemoveEntity(self.id)
 		Game.SendInfoText("Follower has left your service.",false,nil,5)
 	end
 	self.Follower.Heal = function (self, user)
@@ -137,6 +154,7 @@ function MercenaryController:SpawnHorse()
 end
 
 function MercenaryController:Mount()
+System.LogAlways("$5 attempting mount!")
 	self.attemptingMount = true
 	self.Follower.human:Mount(self.FollowerHorse.id)
 	
@@ -148,6 +166,10 @@ function MercenaryController:Mount()
 		self.Follower.inventory:AddItem(weapon)
 		self.Follower.actor:UnequipInventoryItem(weapon)
 		self.oversizeWeap = weapon
+	end
+	
+	if self.preventSavingOnHorse then
+		Utils.DisableSave(self.saveLockName,enum_disableSaveReason.script)
 	end
 end
 
@@ -171,7 +193,7 @@ end
 
 function MercenaryController:FollowOrder()
 	--only capable of following player for now
-	System.LogAlways("$5 Sending follow order")
+	--System.LogAlways("$5 Sending follow order")
 	local initmsg3 = Utils.makeTable('skirmish:command',{type="attackFollowPlayer",target=player.this.id, randomRadius=0.5, clearQueue=true, immediate=true})
 	XGenAIModule.SendMessageToEntityData(self.Follower.soul:GetId(),'skirmish:command',initmsg3);
 	-- attack move command is buggy right now due to perception targetting changes
@@ -180,13 +202,17 @@ function MercenaryController:FollowOrder()
 end
 
 function MercenaryController:InitOrder()
-	local initmsg = Utils.makeTable('skirmish:init',{controller=player.this.id,isEnemy=false,oponentsNode=player.this.id,useQuickTargeting=false,targetingDistance=10.0, useMassBrain=self.useAggressiveBrain })
+	local initmsg = Utils.makeTable('skirmish:init',{controller=player.this.id,isEnemy=false,oponentsNode=player.this.id,useQuickTargeting=false,targetingDistance=10.0, useMassBrain=self.useNormalBrain })
 	XGenAIModule.SendMessageToEntityData(self.Follower.soul:GetId(),'skirmish:init',initmsg);
 end
 
 function MercenaryController:IsPlayerOnHorse()
 	local horseWuid = player.human:GetHorse()
 	return horseWuid ~= INVALID_WUID
+end
+
+function MercenaryController:ControlledInitialized()
+	System.LogAlways("$5 got a callback")
 end
 
 function MercenaryController.getrandomposnear(position)
@@ -215,7 +241,8 @@ function MercenaryController:Kill()
 	if self.Follower ~= nil then
 		self.Follower.soul:SetState("health", 0)
 		self.Follower:Hide(1)
-		System.RemoveEntity(self.Follower.id)
+		--System.RemoveEntity(self.Follower.id)
+		self.Follower:DeleteThis()
 		self.Follower = nil
 	end	
 end
@@ -227,7 +254,8 @@ function MercenaryController.KillHorse(self)
 		self.FollowerHorse:ResetAnimation(0,-1)
 		Dump(self.FollowerHorse.actor:GetCurrentAnimationState())
 		self.FollowerHorse:Hide(1)
-		System.RemoveEntity(self.FollowerHorse.id)
+		self.FollowerHorse:DeleteThis()
+		--System.RemoveEntity(self.FollowerHorse.id)
 		self.FollowerHorse = nil
 	end	
 end
@@ -251,31 +279,23 @@ function MercenaryController.ResetAfterDismount(self)
 
 	self.onHorse = false
 	self.attemptingDismount = false
+	if self.preventSavingOnHorse then
+		Game.RemoveSaveLock(self.saveLockName)
+	end
 end
 
-function MercenaryController:OnUpdate(delta)
-	--System.LogAlways("$5 onupdate.")
-	if self.needReload == true then
-		System.LogAlways("Reloaded Follower")
-		--Dump(self.Follower)
-		self.Follower:SetViewDistUnlimited()
-		self:InitOrder()
-		self:FollowOrder()
-		self:AssignActions()
-		if self.FollowerHorse~=nil then
-			System.LogAlways("Has Horse")
-			self.FollowerHorse:SetViewDistUnlimited()
-			self:Mount()
-		end
-		self.needReload = false
-	end
+function MercenaryController.WaitForReloadedMount(self)
+	self.needReload = false
+end
+
+function MercenaryController:MainLoop()
 	if self.Follower ~= nil then
 		if self.Follower.soul:GetState("health") < 1 then
 			System.LogAlways("$5 Follower has died!")
 			-- hopefully no memory leak if we don't call destroy entity (assuming that engine cleans up for us for corpse/ragdoll purposes)
 			self.Follower = nil
 			-- delete me for now
-			System.RemoveEntity(self.id)
+			self:DeleteThis()
 		else
 			if self.useHorse then
 				if self:IsPlayerOnHorse() and self.FollowerHorse == nil and self.onHorse == false and self.attemptingDismount == false and self.attemptingMount == false then
@@ -287,7 +307,6 @@ function MercenaryController:OnUpdate(delta)
 					self.onHorse = true
 				end
 				if self.attemptingDismount and self.Follower.actor:GetCurrentAnimationState() == "MotionIdle" and self.onHorse then
-					System.LogAlways("should only print once")	
 					Script.SetTimer(500, self.ResetAfterDismount, self)
 					self.onHorse = false
 				end
@@ -302,5 +321,53 @@ function MercenaryController:OnUpdate(delta)
 				self:TeleportToPlayer()
 			end
 		end
+	else
+		-- dangling controller
+		self:DeleteThis()
+	end
+end
+
+function MercenaryController:HandleReload()
+	-- this is all one big gigantic hack to give the game enough time
+	-- signalling to a script doesn't work
+	if self.signalFlag == false then
+		System.LogAlways("Reloaded Follower")
+		--Dump(self.Follower)
+		
+		self.Follower:SetViewDistUnlimited()
+		self:InitOrder()
+		self:AssignActions()
+		if self.FollowerHorse~=nil then
+			System.LogAlways("Has Horse")
+			if self.oversizeWeap ~= nil and self.attemptReequipPolearm then
+				local class = self.oversizeWeap
+				self.oversizeWeap = self.Follower.inventory:FindItem(class)
+				self.Follower.actor:EquipInventoryItem(self.oversizeWeap)
+				self.Follower.human:DrawFromInventory(self.oversizeWeap, 0, false)
+				self.oversizeWeap = nil
+			end
+			-- the AI needs some time to process all the initialization
+			-- forcing it to mount immediately interrupts everything and fucks it up for good
+			self.KillHorse(self)
+			-- hacky way of 'waiting' until everything is loaded because on level loaded doesn't work
+			-- we don't get anything from the game to guarantee this
+			-- the 'right' way is to do everythign in MBT because they have mailboxes for events
+			-- but fuck MBT
+			Script.SetTimer(6000, self.WaitForReloadedMount, self)
+		else
+			self:FollowOrder()
+			--if we don't have a horse then we can start processing immediately
+			self.needReload = false
+		end
+		self.signalFlag = true
+	end
+end
+
+function MercenaryController:OnUpdate(delta)
+	--System.LogAlways("$5 onupdate.")
+	if self.needReload == true then
+		self:HandleReload()
+	else
+		self:MainLoop()
 	end
 end

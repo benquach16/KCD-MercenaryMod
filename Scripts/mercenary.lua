@@ -104,8 +104,8 @@ function Follower_Mod.create()
 end
 
 function Follower_Mod.uninstall()
-	entities = System.GetEntitiesByClass("MercenaryController")
-	for key, value in pair(entities) do
+	local entities = System.GetEntitiesByClass("MercenaryController")
+	for key, value in pairs(entities) do
 		System.RemoveEntity(value.id)
 	end
 	if Follower_Mod.currController ~= nil then
@@ -125,7 +125,7 @@ System.AddCCommand("makehorse", "Follower_Mod.horse()", "[Debug] test follower")
 System.AddCCommand("makehorse2", "Follower_Mod.horse2()", "[Debug] test follower")
 System.AddCCommand("add_cuman", "Follower_Mod.SpawnTestHostile()", "[Debug] test follower")
 System.AddCCommand("follower_teleport", "Follower_Mod.teleport()", "[Debug] test follower")
-System.AddCCommand("follower_uninstall", "Follower_Mod.uninstall", "[Debug] test follower")
+System.AddCCommand("follower_uninstall", "Follower_Mod.uninstall()", "[Debug] test follower")
 System.AddCCommand("follower_make_shop", "Follower_Mod.shop()", "[Debug] test follower")
 System.AddCCommand("follower_hard_reset", "Follower_Mod.hardreset()", "[Debug] test follower")
 System.AddCCommand("follower_init", "Follower_Mod.create()", "[Debug] test follower")
