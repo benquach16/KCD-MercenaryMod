@@ -237,6 +237,17 @@ function MercenaryController:TeleportToPlayer()
 	end
 end
 
+function MercenaryController:TeleportHorseToPlayer()
+	if self:IsPlayerOnHorse() then
+		local horse = XGenAIModule.GetEntityByWUID(player.human:GetHorse())
+		local position = MercenaryController.getrandomposnear(horse:GetWorldPos())
+		self.FollowerHorse:SetWorldPos(position)
+	else
+		local position = MercenaryController.getrandomposnear(player:GetWorldPos())
+		self.FollowerHorse:SetWorldPos(position)
+	end
+end
+
 function MercenaryController:Kill()
 	if self.Follower ~= nil then
 		self.Follower.soul:SetState("health", 0)
@@ -314,9 +325,16 @@ function MercenaryController:MainLoop()
 				end
 			end
 			local playerPosition = player:GetWorldPos()
-			local dist = DistanceSqVectors(self.Follower:GetWorldPos(), playerPosition)
-			if dist > self.MaxFollowDistSq and self.FollowerHorse == nil and self.onHorse == false and self.attemptingDismount == false then
-				self:TeleportToPlayer()
+			if self.FollowerHorse == nil and self.onHorse == false then
+				local dist = DistanceSqVectors(self.Follower:GetWorldPos(), playerPosition)
+				if dist > self.MaxFollowDistSq then
+					self:TeleportToPlayer()
+				end
+			else
+				local dist = DistanceSqVectors(self.FollowerHorse:GetWorldPos(), playerPosition)
+				if dist > self.MaxFollowDistSq then
+					self:TeleportHorseToPlayer()
+				end
 			end
 		end
 	else
