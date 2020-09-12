@@ -1,6 +1,6 @@
 MercenaryController = {
 	useHorse = true, -- self explanitory
-	preventSavingOnHorse = true, -- self explanitory
+	preventSavingOnHorse = false, -- self explanitory
 	attemptReequipPolearm = true, -- This flag should be disabled if you have a mod that reassigns polearms to shields
 	
 	--internal stuff
@@ -194,7 +194,7 @@ end
 function MercenaryController:FollowOrder()
 	--only capable of following player for now
 	--System.LogAlways("$5 Sending follow order")
-	local initmsg3 = Utils.makeTable('skirmish:command',{type="attackFollowPlayer",target=player.this.id, randomRadius=0.5, clearQueue=true, immediate=true})
+	local initmsg3 = Utils.makeTable('skirmish:command',{type="attackFollowPlayer",target=player.this.id, randomRadius=0.5, clearQueue=true})
 	XGenAIModule.SendMessageToEntityData(self.Follower.soul:GetId(),'skirmish:command',initmsg3);
 	-- attack move command is buggy right now due to perception targetting changes
 	--local initmsg2 = Utils.makeTable('skirmish:command',{type="attackMove",target=player.this.id})
@@ -228,9 +228,9 @@ end
 
 function MercenaryController:TeleportToPlayer()
 	if self:IsPlayerOnHorse() then
-		local horse = XGenAIModule.GetEntityByWUID(horseWuid)
+		local horse = XGenAIModule.GetEntityByWUID(player.human:GetHorse())
 		local position = MercenaryController.getrandomposnear(horse:GetWorldPos())
-		self.Follower:SetWorldPos(horse)
+		self.Follower:SetWorldPos(position)
 	else
 		local position = MercenaryController.getrandomposnear(player:GetWorldPos())
 		self.Follower:SetWorldPos(position)
@@ -261,7 +261,7 @@ function MercenaryController.KillHorse(self)
 end
 
 function MercenaryController.ResetAfterDismount(self)
-	
+	self:ResetOrder()
 	if self.oversizeWeap ~= nil and self.attemptReequipPolearm then
 		self.Follower.actor:EquipInventoryItem(self.oversizeWeap)
 		self.Follower.human:DrawFromInventory(self.oversizeWeap, 0, false)
@@ -275,8 +275,6 @@ function MercenaryController.ResetAfterDismount(self)
 	else
 		System.LogAlways("Something really bad happened. Attempted to delete horse in the middle of dismounting")
 	end
-	self:ResetOrder()
-
 	self.onHorse = false
 	self.attemptingDismount = false
 	if self.preventSavingOnHorse then
@@ -317,7 +315,7 @@ function MercenaryController:MainLoop()
 			end
 			local playerPosition = player:GetWorldPos()
 			local dist = DistanceSqVectors(self.Follower:GetWorldPos(), playerPosition)
-			if dist > self.MaxFollowDistSq and self.FollowerHorse == nil then
+			if dist > self.MaxFollowDistSq and self.FollowerHorse == nil and self.onHorse == false and self.attemptingDismount == false then
 				self:TeleportToPlayer()
 			end
 		end
@@ -335,7 +333,6 @@ function MercenaryController:HandleReload()
 		--Dump(self.Follower)
 		
 		self.Follower:SetViewDistUnlimited()
-		self:InitOrder()
 		self:AssignActions()
 		if self.FollowerHorse~=nil then
 			System.LogAlways("Has Horse")
@@ -353,9 +350,13 @@ function MercenaryController:HandleReload()
 			-- we don't get anything from the game to guarantee this
 			-- the 'right' way is to do everythign in MBT because they have mailboxes for events
 			-- but fuck MBT
-			Script.SetTimer(6000, self.WaitForReloadedMount, self)
+			-- Script.SetTimer(6000, self.WaitForReloadedMount, self)
+			self:SpawnHorse()
+			self.onHorse = true
+			self.FollowerHorse:SetViewDistUnlimited()
+			self.needReload = false
 		else
-			self:FollowOrder()
+			self:ResetOrder()
 			--if we don't have a horse then we can start processing immediately
 			self.needReload = false
 		end
