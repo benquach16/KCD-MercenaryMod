@@ -15,6 +15,7 @@ MercenaryController = {
 	FollowerHorse = nil,
 	MaxFollowDistSq = 900,
 	MaxFollowDistSqHorse = 1800,
+	reorderInterval = 10000, -- every 10 seconds, resend follow order
 	oversizeWeap = nil -- only used if attemptReequipPolearm is enabled
 }
 
@@ -128,9 +129,9 @@ function MercenaryController:Spawn()
 	local entity = System.SpawnEntity(spawnParams)
 	--entity.soul.factionId = player.soul:GetFactionID()
 	self.Follower = entity
-	self:InitOrder()
+
 	self:AssignActions()
-	self:FollowOrder()
+	self:ResetOrder()
 	self:SetStats()
 end
 
@@ -157,6 +158,8 @@ function MercenaryController:Mount()
 System.LogAlways("$5 attempting mount!")
 	self.attemptingMount = true
 	self.Follower.human:Mount(self.FollowerHorse.id)
+	--local initmsg3 = Utils.makeTable('skirmish:command',{type="mountHorse",target=self.FollowerHorse.id, randomRadius=0.5, immediate=true, clearQueue=true})
+	--XGenAIModule.SendMessageToEntityData(self.Follower.soul:GetId(),'skirmish:command',initmsg3);
 	
 	-- polearms are dropped automatically due to AI reset after dismount
 	-- so we unequip it then re equip it
@@ -189,6 +192,7 @@ end
 function MercenaryController:ResetOrder()
 	self:InitOrder()
 	self:FollowOrder()
+	self.ResendOrder(self)
 end
 
 function MercenaryController:FollowOrder()
@@ -199,6 +203,14 @@ function MercenaryController:FollowOrder()
 	-- attack move command is buggy right now due to perception targetting changes
 	--local initmsg2 = Utils.makeTable('skirmish:command',{type="attackMove",target=player.this.id})
 	--XGenAIModule.SendMessageToEntityData(self.Follower.soul:GetId(),'skirmish:command',initmsg2);
+end
+
+-- resend order every so often if not on horse
+function MercenaryController.ResendOrder(self)
+	if self.FollowerHorse == nil and self.onHorse == false then
+		self:FollowOrder()
+	end
+	Script.SetTimer(self.reorderInterval, self.ResendOrder, self)
 end
 
 function MercenaryController:InitOrder()
@@ -368,11 +380,7 @@ function MercenaryController:HandleReload()
 			-- we don't get anything from the game to guarantee this
 			-- the 'right' way is to do everythign in MBT because they have mailboxes for events
 			-- but fuck MBT
-			-- Script.SetTimer(6000, self.WaitForReloadedMount, self)
-			self:SpawnHorse()
-			self.onHorse = true
-			self.FollowerHorse:SetViewDistUnlimited()
-			self.needReload = false
+			Script.SetTimer(5000, self.WaitForReloadedMount, self)
 		else
 			self:ResetOrder()
 			--if we don't have a horse then we can start processing immediately
