@@ -1,6 +1,6 @@
 MercenaryController = {
 	useHorse = true, -- self explanitory
-	preventSavingOnHorse = false, -- self explanitory
+	preventSavingOnHorse = true, -- self explanitory
 	attemptReequipPolearm = true, -- This flag should be disabled if you have a mod that reassigns polearms to shields
 	
 	--internal stuff
@@ -313,6 +313,7 @@ function MercenaryController:MainLoop()
 	if self.Follower ~= nil then
 		if self.Follower.soul:GetState("health") < 1 then
 			System.LogAlways("$5 Follower has died!")
+			Game.ShowNotification("Your follower has died!")
 			-- hopefully no memory leak if we don't call destroy entity (assuming that engine cleans up for us for corpse/ragdoll purposes)
 			self.Follower = nil
 			-- delete me for now
@@ -321,6 +322,18 @@ function MercenaryController:MainLoop()
 			if self.useHorse then
 				if self:IsPlayerOnHorse() and self.FollowerHorse == nil and self.onHorse == false and self.attemptingDismount == false and self.attemptingMount == false then
 					self:SpawnHorse()
+				end
+				
+				-- somehow got seperated from horse
+				if self:IsPlayerOnHorse() and self.FollowerHorse ~= nil and self.onHorse == true then
+					local horseWuid = self.Follower.human:GetHorse()
+					-- not on a hhorse but follower horse still exists
+					if horseWuid == INVALID_WUID and self.attemptingDismount == false and self.attemptingMount == false then
+						--self.attemptingDismount = false
+						--self.attemptingMount = false
+						self.onHorse = false
+						self.KillHorse(self)
+					end
 				end
 				
 				if self.attemptingMount and self.Follower.actor:GetCurrentAnimationState() == "MotionIdle" then
