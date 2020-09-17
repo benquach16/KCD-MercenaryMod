@@ -20,7 +20,7 @@ MercenaryController = {
     onHorse = false,
     Follower = nil,
     FollowerHorse = nil,
-    MaxFollowDistSq = 900,
+    MaxFollowDistSq = 800,
     MaxFollowDistSqHorse = 1800,
     reorderInterval = 10000, -- every 10 seconds, resend follow order
     oversizeWeap = nil, -- only used if attemptReequipPolearm is enabled
@@ -144,6 +144,8 @@ function MercenaryController:Spawn()
 
     self:AssignActions()
     self:ResetOrder()
+    
+    self.ResendOrder(self)
     self:SetStats()
 end
 
@@ -205,18 +207,13 @@ end
 
 function MercenaryController:ResetOrder()
     self:InitOrder()
-    self:FollowOrder()
-    self.ResendOrder(self)
+    self:FollowOrder(true)
 end
 
-function MercenaryController:FollowOrder()
-    --only capable of following player for now
-    --System.LogAlways("$5 Sending follow order")
-    local initmsg3 = Utils.makeTable('skirmish:command',{type="attackFollowPlayer",target=player.this.id, randomRadius=0.5, clearQueue=true})
+function MercenaryController:FollowOrder(force)
+    force = force or false
+    local initmsg3 = Utils.makeTable('skirmish:command',{type="attackFollowPlayer",target=player.this.id, randomRadius=0.5, clearQueue=true, immediate = force})
     XGenAIModule.SendMessageToEntityData(self.Follower.soul:GetId(),'skirmish:command',initmsg3);
-    -- attack move command is buggy right now due to perception targetting changes
-    --local initmsg2 = Utils.makeTable('skirmish:command',{type="attackMove",target=player.this.id})
-    --XGenAIModule.SendMessageToEntityData(self.Follower.soul:GetId(),'skirmish:command',initmsg2);
 end
 
 -- resend order every so often if not on horse
@@ -321,6 +318,7 @@ end
 
 function MercenaryController.WaitForReloadedMount(self)
     self.needReload = false
+    self.ResendOrder(self)
 end
 
 function MercenaryController:MainLoop()
@@ -416,6 +414,7 @@ function MercenaryController:HandleReload()
             Script.SetTimer(5000, self.WaitForReloadedMount, self)
         else
             self:ResetOrder()
+            self.ResendOrder(self)
             --if we don't have a horse then we can start processing immediately
             self.needReload = false
         end
