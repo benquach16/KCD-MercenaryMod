@@ -2,7 +2,8 @@ MercenaryState = {
     OnFoot = 0,
     OnHorse = 1,
     AttemptingMount = 2,
-    AttemptingDismount = 3
+    AttemptingDismount = 3,
+    Waiting = 4
 }
 
 MercenaryController = {
@@ -12,13 +13,13 @@ MercenaryController = {
     
     --internal stuff
     saveLockName="FollowerSaveLock",
-    useNormalBrain = true,
+    useNormalBrain = false,
     needReload = false, -- loading function
     signalFlag = false, -- hack
     Follower = nil,
     FollowerHorse = nil,
     MaxFollowDistSq = 800,
-    MaxFollowDistSqHorse = 1800,
+    MaxFollowDistSqWaiting = 4000,
     reorderInterval = 10000, -- every 10 seconds, resend follow order
     oversizeWeap = nil, -- only used if attemptReequipPolearm is enabled
     
@@ -61,6 +62,7 @@ function MercenaryController:OnSave(table)
     else
         table.oversizeWeapClass = nil
     end
+    table.currentState = self.currentState
 end
 
 function MercenaryController:OnLoad(table)
@@ -75,17 +77,19 @@ function MercenaryController:OnLoad(table)
     if self.Follower == nil then
         System.LogAlways("$5 Load Failed")
     end
-    
+    self.currentState = table.currentState
     self.needReload=true
 end
 
 function MercenaryController:AssignActions()
+    self.Follower.Properties.controller = self
     self.Follower.GetActions = function (self,firstFast)
         output = {}
         AddInteractorAction( output, firstFast, Action():hint("Manage Follower"):action("use"):func(self.Manage):interaction(inr_talk))
         AddInteractorAction( output, firstFast, Action():hint("Give/Take Items"):action("mount_horse"):func(self.GiveItems):interaction(inr_talk))
         AddInteractorAction( output, firstFast, Action():hint("Retire Follower"):action("mount_horse"):hintType( AHT_HOLD ):func(self.Retire):interaction(inr_talk))
         AddInteractorAction( output, firstFast, Action():hint("Heal"):action("use"):hintType( AHT_HOLD ):func(self.Heal):interaction(inr_talk))
+        AddInteractorAction( output, firstFast, Action():hint("Stay Here/Follow Me"):action("block"):hintType( AHT_HOLD ):func(self.StayOrFollow):interaction(inr_talk))
         return output
     end
     self.Follower.Manage = function (self, user)
@@ -107,13 +111,22 @@ function MercenaryController:AssignActions()
         --self.soul:SetState( "stamina", 100 );
         self.soul:SetState( "exhaust", 50 )
         self.soul:SetState( "hunger", 100 )
-        -- HACKY CODE DUPLICATION
-        -- references are too much work here so just copy the code in
-        local initmsg = Utils.makeTable('skirmish:init',{controller=player.this.id,isEnemy=false,oponentsNode=player.this.id,useQuickTargeting=true,targetingDistance=5.0, useMassBrain=self.useNormalBrain })
-        XGenAIModule.SendMessageToEntityData(self.soul:GetId(),'skirmish:init',initmsg);
-        local initmsg3 = Utils.makeTable('skirmish:command',{type="attackFollowPlayer",target=player.this.id, randomRadius=0.5, clearQueue=true, immediate=true})
-        XGenAIModule.SendMessageToEntityData(self.soul:GetId(),'skirmish:command',initmsg3);
+        self.Properties.controller:ResetOrder()
+        
         Game.SendInfoText("I'm all healed up.",false,nil,5)
+    end
+    self.Follower.StayOrFollow = function (self, user)
+        if self.Properties.controller.currentState == MercenaryState.Waiting then
+            self.Properties.controller:ResetOrder()
+            self.Properties.controller.currentState = MercenaryState.OnFoot
+            Game.SendInfoText("I will follow you now.",false,nil,5)
+        elseif self.Properties.controller.currentState == MercenaryState.OnFoot then
+            self.Properties.controller:HoldGround()
+            self.Properties.controller.currentState = MercenaryState.Waiting
+            Game.SendInfoText("I will wait here.",false,nil,5)
+        else
+            Game.SendInfoText("Don't tell me to do that right now.",false,nil,5)
+        end
     end
 end
 
@@ -164,6 +177,11 @@ function MercenaryController:SpawnHorse()
     self.FollowerHorse = entity
     
     self:Mount()
+end
+
+function MercenaryController:HoldGround()
+    local initmsg2 = Utils.makeTable('skirmish:command',{type="holdGround", clearQueue=true, immediate=true})
+    XGenAIModule.SendMessageToEntityData(self.Follower.this.id,'skirmish:command',initmsg2);
 end
 
 function MercenaryController:Mount()
@@ -223,6 +241,9 @@ end
 function MercenaryController:InitOrder()
     local initmsg = Utils.makeTable('skirmish:init',{controller=player.this.id,isEnemy=false,oponentsNode=player.this.id,useQuickTargeting=true,targetingDistance=5.0, useMassBrain=self.useNormalBrain })
     XGenAIModule.SendMessageToEntityData(self.Follower.soul:GetId(),'skirmish:init',initmsg);
+    local initmsg3 = Utils.makeTable('skirmish:barkSetup',{ metarole="UDELEJ_TO_NENASILNE", cooldown="30s", once=false, command="*", forceSubtitles = false})
+    --local initmsg3 = Utils.makeTable('skirmish:barkSetup',{ metarole="GOSSIP", cooldown="5s", once=false, command="*", forceSubtitles = true})
+    XGenAIModule.SendMessageToEntityData(self.Follower.soul:GetId(),'skirmish:barkSetup',initmsg3);
 end
 
 function MercenaryController:IsPlayerOnHorse()
@@ -328,53 +349,60 @@ function MercenaryController:MainLoop()
             -- delete me for now
             self:DeleteThis()
         else
-            -- only use state machine on horse
-            if self.useHorse then
-                if self.currentState == MercenaryState.OnFoot then
-                    if self:IsPlayerOnHorse() and self.FollowerHorse == nil then
-                        self.currentState = MercenaryState.AttemptingMount
-                        self:SpawnHorse()
-                    end
-                end
-                if self.currentState == MercenaryState.AttemptingMount then
-                    if self.Follower.actor:GetCurrentAnimationState() == "MotionIdle" then
-                        self.currentState = MercenaryState.OnHorse
-                    end
-                end
-                if self.currentState == MercenaryState.AttemptingDismount then
-                    if self.Follower.actor:GetCurrentAnimationState() == "MotionIdle" then
-                        Script.SetTimer(500, self.ResetAfterDismount, self)
-                        self.currentState = MercenaryState.OnFoot
-                    end
-                end
-                if self.currentState == MercenaryState.OnHorse then
-                     -- somehow got seperated from horse
-                    if self:IsPlayerOnHorse() and self.FollowerHorse ~= nil then
-                        local horseWuid = self.Follower.human:GetHorse()
-                        -- not on a horse but follower horse still exists, basically a glitched state
-                        if horseWuid == INVALID_WUID then
-                            self.currentState = MercenaryState.OnFoot
-                            self.KillHorse(self)
+            if self.currentState ~= MercenaryState.Waiting then
+                -- only use state machine on horse
+                if self.useHorse then
+                    if self.currentState == MercenaryState.OnFoot then
+                        if self:IsPlayerOnHorse() and self.FollowerHorse == nil then
+                            self.currentState = MercenaryState.AttemptingMount
+                            self:SpawnHorse()
                         end
                     end
-                    -- needs to execute this at the end due to state updates
-                    if (not self:IsPlayerOnHorse() or player.actor:GetCurrentAnimationState() == "Dismount") and self.FollowerHorse ~= nil then
-                        self:Dismount()
-                        self.currentState = MercenaryState.AttemptingDismount
+                    if self.currentState == MercenaryState.AttemptingMount then
+                        if self.Follower.actor:GetCurrentAnimationState() == "MotionIdle" then
+                            self.currentState = MercenaryState.OnHorse
+                        end
+                    end
+                    if self.currentState == MercenaryState.AttemptingDismount then
+                        if self.Follower.actor:GetCurrentAnimationState() == "MotionIdle" then
+                            Script.SetTimer(500, self.ResetAfterDismount, self)
+                            self.currentState = MercenaryState.OnFoot
+                        end
+                    end
+                    if self.currentState == MercenaryState.OnHorse then
+                         -- somehow got seperated from horse
+                        if self:IsPlayerOnHorse() and self.FollowerHorse ~= nil then
+                            local horseWuid = self.Follower.human:GetHorse()
+                            -- not on a horse but follower horse still exists, basically a glitched state
+                            if horseWuid == INVALID_WUID then
+                                self.currentState = MercenaryState.OnFoot
+                                self.KillHorse(self)
+                            end
+                        end
+                        -- needs to execute this at the end due to state updates
+                        if (not self:IsPlayerOnHorse() or player.actor:GetCurrentAnimationState() == "Dismount") and self.FollowerHorse ~= nil then
+                            self:Dismount()
+                            self.currentState = MercenaryState.AttemptingDismount
+                        end
                     end
                 end
-
-            end
-            local playerPosition = player:GetWorldPos()
-            if self.FollowerHorse == nil and self.currentState == MercenaryState.OnFoot then
-                local dist = DistanceSqVectors(self.Follower:GetWorldPos(), playerPosition)
-                if dist > self.MaxFollowDistSq then
-                    self:TeleportToPlayer()
+                local playerPosition = player:GetWorldPos()
+                if self.FollowerHorse == nil and self.currentState == MercenaryState.OnFoot then
+                    local dist = DistanceSqVectors(self.Follower:GetWorldPos(), playerPosition)
+                    if dist > self.MaxFollowDistSq then
+                        self:TeleportToPlayer()
+                    end
+                else
+                    local dist = DistanceSqVectors(self.FollowerHorse:GetWorldPos(), playerPosition)
+                    if dist > self.MaxFollowDistSq then
+                        self:TeleportHorseToPlayer()
+                    end
                 end
             else
-                local dist = DistanceSqVectors(self.FollowerHorse:GetWorldPos(), playerPosition)
-                if dist > self.MaxFollowDistSq then
-                    self:TeleportHorseToPlayer()
+                -- if waiting
+                local dist = DistanceSqVectors(self.Follower:GetWorldPos(), playerPosition)
+                if dist > self.MaxFollowDistSqWaiting then
+                    self:TeleportToPlayer()
                 end
             end
         end
@@ -393,7 +421,7 @@ function MercenaryController:HandleReload()
         
         self.Follower:SetViewDistUnlimited()
         self:AssignActions()
-        if self.FollowerHorse~=nil then
+        if self.FollowerHorse~=nil or self.currentState == MercenaryState.OnHorse then
             System.LogAlways("Has Horse")
             if self.oversizeWeap ~= nil and self.attemptReequipPolearm then
                 local class = self.oversizeWeap
@@ -411,7 +439,9 @@ function MercenaryController:HandleReload()
             -- but fuck MBT
             Script.SetTimer(5000, self.WaitForReloadedMount, self)
         else
-            self:ResetOrder()
+            if self.currentState == MercenaryState.OnFoot then
+                self:ResetOrder()
+            end
             self.ResendOrder(self)
             --if we don't have a horse then we can start processing immediately
             self.needReload = false
