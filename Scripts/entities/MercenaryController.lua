@@ -24,6 +24,7 @@ MercenaryController = {
     oversizeWeap = nil, -- only used if attemptReequipPolearm is enabled
     
     currentState = MercenaryState.OnFoot
+    
 }
 
 function MercenaryController:OnSpawn()
@@ -242,7 +243,7 @@ function MercenaryController:InitOrder()
     local initmsg = Utils.makeTable('skirmish:init',{controller=player.this.id,isEnemy=false,oponentsNode=player.this.id,useQuickTargeting=true,targetingDistance=5.0, useMassBrain=self.useNormalBrain })
     XGenAIModule.SendMessageToEntityData(self.Follower.soul:GetId(),'skirmish:init',initmsg);
     local initmsg3 = Utils.makeTable('skirmish:barkSetup',{ metarole="UDELEJ_TO_NENASILNE", cooldown="30s", once=false, command="*", forceSubtitles = false})
-    --local initmsg3 = Utils.makeTable('skirmish:barkSetup',{ metarole="GOSSIP", cooldown="5s", once=false, command="*", forceSubtitles = true})
+    --local initmsg3 = Utils.makeTable('skirmish:barkSetup',{ metarole="COMBAT_CHARGE", cooldown="5s", once=false, command="*", forceSubtitles = true})
     XGenAIModule.SendMessageToEntityData(self.Follower.soul:GetId(),'skirmish:barkSetup',initmsg3);
 end
 
@@ -255,24 +256,24 @@ function MercenaryController:ControlledInitialized()
     System.LogAlways("$5 got a callback")
 end
 
-function MercenaryController.getrandomposnear(position)
+function MercenaryController.getrandomposnear(position, radius)
     -- deep copy
     local ret = {}
     ret.x = position.x
     ret.y = position.y
     ret.z = position.z
-    ret.x = position.x + (math.random() * 2) - (math.random() * 2)
-    ret.y = position.y + (math.random() * 2) - (math.random() * 2)
+    ret.x = position.x + (math.random() * 2) - (math.random() * 2) + math.random(0, radius) - math.random(0, radius)
+    ret.y = position.y + (math.random() * 2) - (math.random() * 2) + math.random(0, radius) - math.random(0, radius)
     return ret
 end
 
 function MercenaryController:TeleportToPlayer()
     if self:IsPlayerOnHorse() then
         local horse = XGenAIModule.GetEntityByWUID(player.human:GetHorse())
-        local position = MercenaryController.getrandomposnear(horse:GetWorldPos())
+        local position = MercenaryController.getrandomposnear(horse:GetWorldPos(), 4)
         self.Follower:SetWorldPos(position)
     else
-        local position = MercenaryController.getrandomposnear(player:GetWorldPos())
+        local position = MercenaryController.getrandomposnear(player:GetWorldPos(), 1)
         self.Follower:SetWorldPos(position)
     end
 end
@@ -280,10 +281,10 @@ end
 function MercenaryController:TeleportHorseToPlayer()
     if self:IsPlayerOnHorse() then
         local horse = XGenAIModule.GetEntityByWUID(player.human:GetHorse())
-        local position = MercenaryController.getrandomposnear(horse:GetWorldPos())
+        local position = MercenaryController.getrandomposnear(horse:GetWorldPos(), 4)
         self.FollowerHorse:SetWorldPos(position)
     else
-        local position = MercenaryController.getrandomposnear(player:GetWorldPos())
+        local position = MercenaryController.getrandomposnear(player:GetWorldPos(), 1)
         self.FollowerHorse:SetWorldPos(position)
     end
 end
