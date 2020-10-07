@@ -6,6 +6,14 @@ MercenaryState = {
     Waiting = 4
 }
 
+MercenaryHorsePresets = {
+    "a21e7c6c-d161-4500-a55a-89962a33c3c3",
+    "db63a282-a663-42ed-8ceb-610be4839aa0",
+    "4e925a7f-9621-4d52-898a-e53fedcaacff",
+    "65e9eed3-e34e-41ec-bbda-fbd09f81c285",
+    --"d0c3d3cf-7190-4493-a700-86de03f4a2b5",
+}
+
 MercenaryController = {
     useHorse = true, -- self explanitory
     preventSavingOnHorse = true, -- self explanitory
@@ -13,7 +21,7 @@ MercenaryController = {
     
     --internal stuff
     saveLockName="FollowerSaveLock",
-    useNormalBrain = false,
+    useNormalBrain = true,
     needReload = false, -- loading function
     signalFlag = false, -- hack
     Follower = nil,
@@ -23,7 +31,9 @@ MercenaryController = {
     reorderInterval = 10000, -- every 10 seconds, resend follow order
     oversizeWeap = nil, -- only used if attemptReequipPolearm is enabled
     
-    currentState = MercenaryState.OnFoot
+    currentState = MercenaryState.OnFoot,
+    
+    currentHorsePresetKey = nil
     
 }
 
@@ -43,11 +53,16 @@ function MercenaryController:SetStats()
     self.Follower.soul:AdvanceToStatLevel("agi",15)
     self.Follower.soul:AdvanceToStatLevel("vit",18)
     self.Follower.soul:AdvanceToSkillLevel("defense",14)
+    --self.Follower.soul:AdvanceToSkillLevel("fencing",14)
     self.Follower.soul:AdvanceToSkillLevel("weapon_large",12)
     self.Follower.soul:AdvanceToSkillLevel("weapon_sword",12)
     self.Follower.soul:AddPerk(string.upper("d2da2217-d46d-4cdb-accb-4ff860a3d83e")) -- perfect block
     self.Follower.soul:AddPerk(string.upper("ec4c5274-50e3-4bbf-9220-823b080647c4")) -- riposte
     self.Follower.soul:AddPerk(string.upper("3e87c467-681d-48b5-9a8c-485443adcd42")) -- pommel strike
+    self.Follower.soul:AddPerk(string.upper("7d124502-f7ac-42ad-bb27-cba085fb69be")) -- LS combo 4
+    self.Follower.soul:AddPerk(string.upper("2cd86a68-776f-4d9b-ae3f-a0273dfff1f6")) -- last gasp
+    self.Follower.soul:AddPerk(string.upper("8f1af639-7e7f-49e3-ae25-e3cfefa2a054")) -- close shave
+    self.Follower.soul:AddPerk(string.upper("caf7c415-2b83-44a3-b79b-2ddc3437f58e")) -- halfsword
 end
 
 function MercenaryController:OnSave(table)
@@ -64,6 +79,7 @@ function MercenaryController:OnSave(table)
         table.oversizeWeapClass = nil
     end
     table.currentState = self.currentState
+    table.currentHorsePresetKey = self.currentHorsePresetKey
 end
 
 function MercenaryController:OnLoad(table)
@@ -79,6 +95,7 @@ function MercenaryController:OnLoad(table)
         System.LogAlways("$5 Load Failed")
     end
     self.currentState = table.currentState
+    self.currentHorsePresetKey = self.currentHorsePresetKey
     self.needReload=true
 end
 
@@ -103,16 +120,36 @@ function MercenaryController:AssignActions()
     self.Follower.Retire = function (self, user)
         self.soul:SetState("health", 0)
         self:Hide(1)
-        self:DeleteThis()
-        --System.RemoveEntity(self.id)
+        --self:DeleteThis()
+        System.RemoveEntity(self.id)
         Game.SendInfoText("Follower has left your service.",false,nil,5)
     end
     self.Follower.Heal = function (self, user)
         self.soul:SetState( "health", 100 )
         --self.soul:SetState( "stamina", 100 );
-        self.soul:SetState( "exhaust", 50 )
+        self.soul:SetState( "exhaust", 100 )
         self.soul:SetState( "hunger", 100 )
-        self.Properties.controller:ResetOrder()
+        self.soul:HealBleeding(1, 1)
+        self.soul:HealBleeding(1, 2)
+        self.soul:HealBleeding(1, 3)
+        self.soul:HealBleeding(1, 4)
+        self.soul:HealBleeding(1, 5)
+        self.soul:HealBleeding(1, 6)
+        if self.human:IsInDialog() then
+            --System.LogAlways("in dialog")
+        else
+            --System.LogAlways("not in dialog")
+        end
+        self.human:InterruptDialog()
+        self.Properties.controller:InitOrder()
+        self.Properties.controller:OrderStop()
+        local weapon = self.human:GetItemInHand(0)
+        local isOversized = ItemManager.IsItemOversized(weapon)
+        
+        if self.human:IsWeaponDrawn() ~= true and isOversized ~= true then
+            self.human:DrawWeapon()
+        end
+        
         
         Game.SendInfoText("I'm all healed up.",false,nil,5)
     end
@@ -174,15 +211,35 @@ function MercenaryController:SpawnHorse()
     spawnParams.properties.sharedSoulGuid = "490b0faa-1114-9cbb-f3a8-68e242922abc"
     spawnParams.properties.bWH_PerceptibleObject = 1
     local entity = System.SpawnEntity(spawnParams)
+    if self.currentHorsePresetKey ~= nil then
+        entity.actor:EquipClothingPreset(MercenaryHorsePresets[self.currentHorsePresetKey])
+    end
     entity.AI.invulnerable = true
     self.FollowerHorse = entity
     
     self:Mount()
 end
 
+function MercenaryController:NextHorsePreset()
+    if self.currentHorsePresetKey ~= nil then
+        local key, v = next(MercenaryHorsePresets, self.currentHorsePresetKey)
+        self.currentHorsePresetKey = key
+    else
+        local key = next(MercenaryHorsePresets)
+        self.currentHorsePresetKey = key
+    end
+
+end
+
 function MercenaryController:HoldGround()
     local initmsg2 = Utils.makeTable('skirmish:command',{type="holdGround", clearQueue=true, immediate=true})
     XGenAIModule.SendMessageToEntityData(self.Follower.this.id,'skirmish:command',initmsg2);
+end
+
+function MercenaryController:UnstealItems()
+    for key, item in pairs (self.Follower.inventory:GetInventoryTable()) do
+        ItemManager.SetItemOwner(item, player.id, false)
+    end
 end
 
 function MercenaryController:Mount()
@@ -219,6 +276,13 @@ function MercenaryController:OrderAttack(entity)
     XGenAIModule.SendMessageToEntityData(self.Follower.this.id,'skirmish:command',initmsg2);
 end
 
+function MercenaryController:OrderStop()
+    local initmsg2 = Utils.makeTable('skirmish:command',{type="stopFighting", clearQueue=true, immediate=true})
+    XGenAIModule.SendMessageToEntityData(self.Follower.this.id,'skirmish:command',initmsg2);
+    local initmsg3 = Utils.makeTable('skirmish:command',{type="attackFollowPlayer",target=player.this.id, randomRadius=0.5 })
+    XGenAIModule.SendMessageToEntityData(self.Follower.soul:GetId(),'skirmish:command',initmsg3);
+end
+
 
 function MercenaryController:ResetOrder()
     self:InitOrder()
@@ -235,12 +299,13 @@ end
 function MercenaryController.ResendOrder(self)
     if self.FollowerHorse == nil and self.currentState == MercenaryState.OnFoot then
         self:FollowOrder()
+        self.Follower.human:InterruptDialog()
     end
     Script.SetTimer(self.reorderInterval, self.ResendOrder, self)
 end
 
 function MercenaryController:InitOrder()
-    local initmsg = Utils.makeTable('skirmish:init',{controller=player.this.id,isEnemy=false,oponentsNode=player.this.id,useQuickTargeting=true,targetingDistance=5.0, useMassBrain=self.useNormalBrain })
+    local initmsg = Utils.makeTable('skirmish:init',{controller=self.Follower.soul:GetId(),isEnemy=false,oponentsNode=self.Follower.soul:GetId(),useQuickTargeting=false,targetingDistance=5.0, useMassBrain=self.useNormalBrain })
     XGenAIModule.SendMessageToEntityData(self.Follower.soul:GetId(),'skirmish:init',initmsg);
     local initmsg3 = Utils.makeTable('skirmish:barkSetup',{ metarole="UDELEJ_TO_NENASILNE", cooldown="30s", once=false, command="*", forceSubtitles = false})
     --local initmsg3 = Utils.makeTable('skirmish:barkSetup',{ metarole="COMBAT_CHARGE", cooldown="5s", once=false, command="*", forceSubtitles = true})
@@ -293,8 +358,8 @@ function MercenaryController:Kill()
     if self.Follower ~= nil then
         self.Follower.soul:SetState("health", 0)
         self.Follower:Hide(1)
-        --System.RemoveEntity(self.Follower.id)
-        self.Follower:DeleteThis()
+        System.RemoveEntity(self.Follower.id)
+        --self.Follower:DeleteThis()
         self.Follower = nil
     end 
 end
@@ -306,8 +371,8 @@ function MercenaryController.KillHorse(self)
         self.FollowerHorse:ResetAnimation(0,-1)
         Dump(self.FollowerHorse.actor:GetCurrentAnimationState())
         --self.FollowerHorse:Hide(1)
-        self.FollowerHorse:DeleteThis()
-        --System.RemoveEntity(self.FollowerHorse.id)
+        --self.FollowerHorse:DeleteThis()
+        System.RemoveEntity(self.FollowerHorse.id)
         self.FollowerHorse = nil
     end 
 end
@@ -345,10 +410,10 @@ function MercenaryController:MainLoop()
             System.LogAlways("$5 Follower has died!")
             Game.ShowNotification("Your follower has died!")
             -- hopefully no memory leak if we don't call destroy entity (assuming that engine cleans up for us for corpse/ragdoll purposes)
-            System.RemoveEntity(self.Follower.id)
+            -- System.RemoveEntity(self.Follower.id)
             self.Follower = nil
             -- delete me for now
-            self:DeleteThis()
+            System.RemoveEntity(self.id)
         else
             if self.currentState ~= MercenaryState.Waiting then
                 -- only use state machine on horse
@@ -409,11 +474,17 @@ function MercenaryController:MainLoop()
         end
     else
         -- dangling controller
-        self:DeleteThis()
+        System.RemoveEntity(this.id)
     end
 end
 
 function MercenaryController:HandleReload()
+    -- something really bad happened
+    if self.Follower == nil then
+        System.LogAlways("FollowerMod: Something really bad happened. A controller was saved without a follower. This controller will be deleted")
+        System.RemoveEntity(this.id)
+        return
+    end
     -- this is all one big gigantic hack to give the game enough time
     -- signalling to a script doesn't work
     if self.signalFlag == false then
