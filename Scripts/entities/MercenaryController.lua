@@ -11,8 +11,37 @@ MercenaryHorsePresets = {
     "db63a282-a663-42ed-8ceb-610be4839aa0",
     "4e925a7f-9621-4d52-898a-e53fedcaacff",
     "65e9eed3-e34e-41ec-bbda-fbd09f81c285",
+    "4d279fc4-8b8f-450a-b310-2208bb8a76ae",
+    "479642ad-7b2d-4d2b-a80c-e43e431d70be",
     --"d0c3d3cf-7190-4493-a700-86de03f4a2b5",
 }
+
+MercenaryHorseCaparisonGuids = {
+    "40024d27-b1c4-6ef7-3ca0-98025de43f9e",
+    "402c55d2-ae62-bf47-823f-8a5760eab7bd",
+    "407c5a00-2e73-f2dc-6a0b-8244c78e5da7",
+    "40a5de5a-d3a5-c4c3-f5f1-71ab661d55b4",
+    "40e576c7-74e8-216e-a4f0-a3aa6bd35387",
+    "411f568d-9e62-417c-38a1-ae108bb233ba",
+    "41c05047-74e5-f23d-1fe8-b0a8db360087",
+    "421ff758-4be3-cc11-1946-39ceb56aecb1",
+    "42e8c6bf-a457-4ad9-48c8-445fea1507ae",
+    "466c49e3-6cbc-e962-2571-c44183da449d",
+    "468a36a5-1aa9-e1c8-1d01-2c778ef84ea9",
+    "46ee8c8f-2c9a-3002-a31e-8623e2da529d",
+    "470d9803-e4cb-c9ae-da72-3466cf117cbb",
+    "473709c6-2b26-5d05-57cf-50e4d6fceaa7",
+    "47c3342a-3be4-8fe6-696e-436555714b8f",
+    "4849903a-5dd2-e0b8-bfd0-2e599509c68e",
+    "48a1ea8c-c52a-9b35-fda6-8df247fc18a2",
+    "49b83945-99a1-50ba-9107-c3d9846875b1",
+    "4a346515-2839-801d-3172-826486b9ee9d",
+    "4af5fe3b-3e23-1a10-4ff6-b2d53d4d7187",
+    "4b609a17-9266-0e3e-75dc-d4d709533dba",
+    "4cc06ca7-46bf-609c-93de-3ce43481a28c",
+    "4f3d678e-553c-f810-86fe-5534db2e1ea9"
+}
+
 
 MercenaryController = {
     useHorse = true, -- self explanitory
@@ -33,7 +62,8 @@ MercenaryController = {
     
     currentState = MercenaryState.OnFoot,
     
-    currentHorsePresetKey = nil
+    currentHorsePresetKey = nil,
+    currentHorsePreset = nil
     
 }
 
@@ -54,13 +84,15 @@ function MercenaryController:SetStats()
     self.Follower.soul:AdvanceToStatLevel("vit",18)
     self.Follower.soul:AdvanceToSkillLevel("defense",14)
     --self.Follower.soul:AdvanceToSkillLevel("fencing",14)
-    self.Follower.soul:AdvanceToSkillLevel("weapon_large",12)
+    self.Follower.soul:AdvanceToSkillLevel("weapon_large",14)
     self.Follower.soul:AdvanceToSkillLevel("weapon_sword",12)
+    self.Follower.soul:AdvanceToSkillLevel("weapon_mace",12)
+    self.Follower.soul:AdvanceToSkillLevel("weapon_axe",12)
     self.Follower.soul:AddPerk(string.upper("d2da2217-d46d-4cdb-accb-4ff860a3d83e")) -- perfect block
     self.Follower.soul:AddPerk(string.upper("ec4c5274-50e3-4bbf-9220-823b080647c4")) -- riposte
     self.Follower.soul:AddPerk(string.upper("3e87c467-681d-48b5-9a8c-485443adcd42")) -- pommel strike
     self.Follower.soul:AddPerk(string.upper("7d124502-f7ac-42ad-bb27-cba085fb69be")) -- LS combo 4
-    self.Follower.soul:AddPerk(string.upper("2cd86a68-776f-4d9b-ae3f-a0273dfff1f6")) -- last gasp
+    --self.Follower.soul:AddPerk(string.upper("2cd86a68-776f-4d9b-ae3f-a0273dfff1f6")) -- last gasp
     self.Follower.soul:AddPerk(string.upper("8f1af639-7e7f-49e3-ae25-e3cfefa2a054")) -- close shave
     self.Follower.soul:AddPerk(string.upper("caf7c415-2b83-44a3-b79b-2ddc3437f58e")) -- halfsword
 end
@@ -71,15 +103,17 @@ function MercenaryController:OnSave(table)
         return
     end
     table.Follower = self.Follower:GetGUID()
-    table.FollowerHorse = self.FollowerHorse:GetGUID()
+    --table.currentState = self.currentState
+    if self.FollowerHorse ~= nil then
+        table.FollowerHorse = self.FollowerHorse:GetGUID()
+    end
     if self.oversizeWeap ~= nil then
         local weap = ItemManager.GetItem(self.oversizeWeap)
         table.oversizeWeapClass = weap.class
     else
         table.oversizeWeapClass = nil
     end
-    table.currentState = self.currentState
-    table.currentHorsePresetKey = self.currentHorsePresetKey
+    table.currentHorsePreset = self.currentHorsePreset
 end
 
 function MercenaryController:OnLoad(table)
@@ -94,8 +128,8 @@ function MercenaryController:OnLoad(table)
     if self.Follower == nil then
         System.LogAlways("$5 Load Failed")
     end
-    self.currentState = table.currentState
-    self.currentHorsePresetKey = self.currentHorsePresetKey
+    --self.currentState = table.currentState
+    self.currentHorsePreset = table.currentHorsePreset
     self.needReload=true
 end
 
@@ -140,6 +174,9 @@ function MercenaryController:AssignActions()
         else
             --System.LogAlways("not in dialog")
         end
+        local cleanVal = 0.95
+        self.actor:WashDirtAndBlood(cleanVal)
+        self.actor:WashItems(cleanVal)
         self.human:InterruptDialog()
         self.Properties.controller:InitOrder()
         self.Properties.controller:OrderStop()
@@ -211,8 +248,17 @@ function MercenaryController:SpawnHorse()
     spawnParams.properties.sharedSoulGuid = "490b0faa-1114-9cbb-f3a8-68e242922abc"
     spawnParams.properties.bWH_PerceptibleObject = 1
     local entity = System.SpawnEntity(spawnParams)
-    if self.currentHorsePresetKey ~= nil then
-        entity.actor:EquipClothingPreset(MercenaryHorsePresets[self.currentHorsePresetKey])
+    if self.currentHorsePreset ~= nil then
+        --entity.actor:EquipClothingPreset(self.currentHorsePreset)
+    end
+    
+    for key, value in pairs(MercenaryHorseCaparisonGuids) do
+        local caparison = self.Follower.inventory:FindItem(value)
+        if caparison ~= nil then
+            entity.inventory:CreateItem(value, 100, 1)
+            local transferredItem = entity.inventory:FindItem(value)
+            entity.actor:EquipInventoryItem(transferredItem)
+        end
     end
     entity.AI.invulnerable = true
     self.FollowerHorse = entity
@@ -229,6 +275,11 @@ function MercenaryController:NextHorsePreset()
         self.currentHorsePresetKey = key
     end
 
+end
+
+function MercenaryController:SetHorsePreset(guid)
+    self.currentHorsePreset = guid
+    Dump(self.currentHorsePreset)
 end
 
 function MercenaryController:HoldGround()
@@ -291,7 +342,7 @@ end
 
 function MercenaryController:FollowOrder(force)
     force = force or false
-    local initmsg3 = Utils.makeTable('skirmish:command',{type="attackFollowPlayer",target=player.this.id, randomRadius=0.5, clearQueue=true, immediate = force })
+    local initmsg3 = Utils.makeTable('skirmish:command',{type="attackFollowPlayer",target=player.this.id, randomRadius=1.5, clearQueue=true, immediate = force })
     XGenAIModule.SendMessageToEntityData(self.Follower.soul:GetId(),'skirmish:command',initmsg3);
 end
 
@@ -337,9 +388,11 @@ function MercenaryController:TeleportToPlayer()
         local horse = XGenAIModule.GetEntityByWUID(player.human:GetHorse())
         local position = MercenaryController.getrandomposnear(horse:GetWorldPos(), 4)
         self.Follower:SetWorldPos(position)
+        self:ResetOrder()
     else
         local position = MercenaryController.getrandomposnear(player:GetWorldPos(), 1)
         self.Follower:SetWorldPos(position)
+        self:ResetOrder()
     end
 end
 
@@ -419,10 +472,15 @@ function MercenaryController:MainLoop()
                 -- only use state machine on horse
                 if self.useHorse then
                     if self.currentState == MercenaryState.OnFoot then
+                        if self.FollowerHorse ~= nil then
+                            self:KillHorse()
+                        end
                         if self:IsPlayerOnHorse() and self.FollowerHorse == nil then
                             self.currentState = MercenaryState.AttemptingMount
                             self:SpawnHorse()
                         end
+                        
+
                     end
                     if self.currentState == MercenaryState.AttemptingMount then
                         if self.Follower.actor:GetCurrentAnimationState() == "MotionIdle" then
@@ -431,7 +489,8 @@ function MercenaryController:MainLoop()
                     end
                     if self.currentState == MercenaryState.AttemptingDismount then
                         if self.Follower.actor:GetCurrentAnimationState() == "MotionIdle" then
-                            Script.SetTimer(500, self.ResetAfterDismount, self)
+                            --Script.SetTimer(500, self.ResetAfterDismount, self)
+                            self.ResetAfterDismount(self)
                             self.currentState = MercenaryState.OnFoot
                         end
                     end
